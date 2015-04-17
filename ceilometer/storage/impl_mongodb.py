@@ -85,6 +85,8 @@ class MongoDBStorage(base.StorageEngine):
 AVAILABLE_CAPABILITIES = {
     'meters': {'query': {'simple': True,
                          'metadata': True}},
+    'contacts': {'query': {'simple': True,
+                         'metadata': True}},
     'resources': {'query': {'simple': True,
                             'metadata': True}},
     'samples': {'query': {'simple': True,
@@ -744,7 +746,7 @@ class Connection(pymongo_base.Connection):
         :param resource: resource filter.
         """
         if resource is not None:
-            query['resource_id'] = {'$regex':resource}
+            query['resource_id'] = resource
 
         # Add resource_ prefix so it matches the field in the db
         query.update(dict(('resource_' + k, v)
@@ -800,7 +802,7 @@ class Connection(pymongo_base.Connection):
         :param resource: resource filter.
         """
         if resource is not None:
-            query['_id'] = {'$regx':resource}
+            query['_id'] = resource
 
         query.update(dict((k, v)
                           for (k, v) in metaquery.iteritems()))

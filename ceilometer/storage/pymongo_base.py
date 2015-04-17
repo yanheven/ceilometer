@@ -214,6 +214,22 @@ class Connection(base.Connection):
 
     create_alarm = update_alarm
 
+    def update_contact(self, contact):
+        """update contact
+        """
+        data = contact.as_dict()
+
+        self.db.contact.update(
+            {'contact_id': contact.contact_id},
+            {'$set': data},
+            upsert=True)
+
+        stored_contact = self.db.contact.find({'contact_id': contact.contact_id})[0]
+        del stored_contact['_id']
+        return models.Contact(**stored_contact)
+
+    create_contact = update_contact
+
     def delete_alarm(self, alarm_id):
         """Delete an alarm
         """
@@ -223,6 +239,11 @@ class Connection(base.Connection):
         """Record alarm change event.
         """
         self.db.alarm_history.insert(alarm_change)
+
+    def delete_contact(self, contact_id):
+        """Delete an contact
+        """
+        self.db.contact.remove({'contact_id': contact_id})
 
     def get_samples(self, sample_filter, limit=None):
         """Return an iterable of model.Sample instances.
@@ -315,6 +336,26 @@ class Connection(base.Connection):
                                               pymongo.DESCENDING)],
                                             None)
 
+    def get_contacts(self, contact_id=None, contact_name=None,
+                   contact_phone=None, contact_email=None, state=None, user_id=None,
+                   project_id=None, pagination=None):
+        if pagination:
+            raise NotImplementedError('Pagination not implemented')
+
+        q = {}
+        if user_id is not None:
+            q['user_id'] = user_id
+        if project_id is not None:
+            q['project_id'] = project_id
+        if contact_name is not None:
+            q['contact_name'] = contact_name
+        if state is not None:
+            q['state'] = state
+        if contact_id is not None:
+            q['contact_id'] = contact_id
+
+        return self._retrieve_contacts(q, [], None)
+
     def query_samples(self, filter_expr=None, orderby=None, limit=None):
         return self._retrieve_data(filter_expr, orderby, limit, models.Meter)
 
@@ -331,6 +372,11 @@ class Connection(base.Connection):
                                    limit,
                                    models.AlarmChange)
 
+    def query_contacts(self, filter_expr=None, orderby=None, limit=None):
+        """Return an iterable of model.Contact objects.
+        """
+        return self._retrieve_data(filter_expr, orderby, limit, models.Contact)
+
     def _retrieve_data(self, filter_expr, orderby, limit, model):
         if limit == 0:
             return []
@@ -344,7 +390,8 @@ class Connection(base.Connection):
 
         retrieve = {models.Meter: self._retrieve_samples,
                     models.Alarm: self._retrieve_alarms,
-                    models.AlarmChange: self._retrieve_alarm_changes}
+                    models.AlarmChange: self._retrieve_alarm_changes,
+                    models.Contact: self._retrieve_contacts}
         return retrieve[model](query_filter, orderby_filter, limit)
 
     def _retrieve_samples(self, query, orderby, limit):
@@ -397,6 +444,20 @@ class Connection(base.Connection):
             ah.update(alarm_history)
             del ah['_id']
             yield models.AlarmChange(**ah)
+
+    def _retrieve_contacts(self, query_filter, orderby, limit):
+        if limit is not None:
+            contacts = self.db.contact.find(query_filter,
+                                        limit=limit,
+                                        sort=orderby)
+        else:
+            contacts = self.db.contact.find(query_filter, sort=orderby)
+
+        for contact in contacts:
+            a = {}
+            a.update(contact)
+            del a['_id']
+            yield models.Contact(**a)
 
     @classmethod
     def _ensure_encapsulated_rule_format(cls, alarm):

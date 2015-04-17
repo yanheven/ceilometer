@@ -374,3 +374,29 @@ class AlarmChange(Model):
             project_id=project_id,
             on_behalf_of=on_behalf_of,
             timestamp=timestamp)
+
+
+class Contact(Model):
+    """an alarm's contact.
+    """
+    def __init__(self,
+                 contact_id,
+                 contact_name,
+                 contact_phone,
+                 contact_email,
+                 state,
+                 user_id,
+                 project_id,
+                 timestamp=None,
+                 state_timestamp=None
+                 ):
+        Model.__init__(self,
+                       contact_id=contact_id,
+                       contact_name=contact_name,
+                       contact_phone=contact_phone,
+                       contact_email=contact_email,
+                       state=state,
+                       state_timestamp=state_timestamp,
+                       user_id=user_id,
+                       project_id=project_id,
+                       timestamp=timestamp)

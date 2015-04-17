@@ -70,6 +70,7 @@ ALARM_API_OPTS = [
 cfg.CONF.register_opts(ALARM_API_OPTS, group='alarm')
 
 state_kind = ["ok", "alarm", "insufficient data"]
+contact_state_kind = ["enabled", "disabled"]
 state_kind_enum = wtypes.Enum(str, *state_kind)
 operation_kind = wtypes.Enum(str, 'lt', 'le', 'eq', 'ne', 'ge', 'gt')
 
@@ -2477,6 +2478,204 @@ class CapabilitiesController(rest.RestController):
         return Capabilities(api=_flatten_capabilities(driver_capabilities))
 
 
+class Contact(_Base):
+    """The alarm's contact
+    """
+    contact_id = wtypes.text
+    contact_name = wtypes.text
+    contact_email = wtypes.text
+    state = AdvEnum('state', str, *contact_state_kind,
+                    default='enabled')
+    contact_phone = wtypes.text
+    project_id = wtypes.text
+    user_id = wtypes.text
+    timestamp = datetime.datetime
+    state_timestamp = datetime.datetime
+
+    @classmethod
+    def sample(cls):
+        return cls(contact_id = 'contact_id',
+                   contact_name='test',
+                   contact_phone='phone-foo',
+                   contact_email='foo@foo.com',
+                   state='enable',
+                   user_id="user-id-foo",
+                   project_id="project-id-foo",
+                   timestamp=datetime.datetime.utcnow(),
+                   state_timestamp=datetime.datetime.utcnow(),
+                   )
+
+
+class ContactController(rest.RestController):
+    """Manages operations on a single contact.
+    """
+    _custom_actions = {
+        'state': ['PUT', 'GET'],
+    }
+
+    def __init__(self, contact_id):
+        pecan.request.context['contact_id'] = contact_id
+        self._id = contact_id
+
+    def _contact(self):
+        self.conn = pecan.request.storage_conn
+        auth_project = acl.get_limited_to_project(pecan.request.headers)
+        contacts = list(self.conn.get_contacts(contact_id=self._id,
+                                               project_id=auth_project))
+        if not contacts:
+            raise EntityNotFound(_('Contact'), self._id)
+        return contacts[0]
+
+    @wsme_pecan.wsexpose(Contact)
+    def get(self):
+        """Return this contact.
+        """
+        return Contact.from_db_model(self._contact())
+
+    @wsme_pecan.wsexpose(Contact, body=Contact)
+    def put(self, data):
+        """Modify this contact.
+
+        :param data: an contact within the request body.
+        """
+        # Ensure contact exists
+        contact_in = self._contact()
+
+        now = timeutils.utcnow()
+
+        data.contact_id = self._id
+        user, project = acl.get_limited_to(pecan.request.headers)
+        if user:
+            data.user_id = user
+        elif data.user_id == wtypes.Unset:
+            data.user_id = contact_in.user_id
+        if project:
+            data.project_id = project
+        elif data.project_id == wtypes.Unset:
+            data.project_id = contact_in.project_id
+        data.timestamp = now
+        if contact_in.state != data.state:
+            data.state_timestamp = now
+        else:
+            data.state_timestamp = contact_in.state_timestamp
+
+        # make sure alarms are unique by name per project.
+        if contact_in.contact_name != data.contact_name:
+            contacts = list(self.conn.get_contacts(contact_name=data.contact_name,
+                                               project_id=data.project_id))
+            if contacts:
+                raise ClientSideError(
+                    _("contact with name=%s exists") % data.contact_name,
+                    status_code=409)
+
+        updated_contact = data.as_dict(storage.models.Contact)
+        try:
+            contact_in = storage.models.Contact(**updated_contact)
+        except Exception:
+            LOG.exception(_("Error while putting contact: %s") % updated_contact)
+            raise ClientSideError(_("Contact incorrect"))
+
+        contact = self.conn.update_contact(contact_in)
+        return Contact.from_db_model(contact)
+
+    @wsme_pecan.wsexpose(None, status_code=204)
+    def delete(self):
+        """Delete this contact.
+        """
+        # ensure alarm exists before deleting
+        contact = self._contact()
+        self.conn.delete_contact(contact.contact_id)
+
+    @wsme.validate(state_kind_enum)
+    @wsme_pecan.wsexpose(state_kind_enum, body=state_kind_enum)
+    def put_state(self, state):
+        """Set the state of this contact.
+
+        :param state: an contact state within the request body.
+        """
+        if state not in state_kind:
+            raise ClientSideError(_("state invalid"))
+        now = timeutils.utcnow()
+        contact = self._contact()
+        contact.state = state
+        contact.state_timestamp = now
+        contact = self.conn.update_contact(contact)
+        return contact.state
+
+    @wsme_pecan.wsexpose(state_kind_enum)
+    def get_state(self):
+        """Get the state of this contact.
+        """
+        contact = self._contact()
+        return contact.state
+
+
+class ContactsController(rest.RestController):
+    """Manages operations on the contact list collection.
+    """
+
+    @pecan.expose()
+    def _lookup(self, contact_id, *remainder):
+        return ContactController(contact_id), remainder
+
+    @wsme_pecan.wsexpose(Contact, body=Contact, status_code=201)
+    def post(self, data):
+        """Create a new alarm contact.
+
+        :param data: an alarm contact within the request body.
+        """
+        conn = pecan.request.storage_conn
+        now = timeutils.utcnow()
+
+        data.contact_id = str(uuid.uuid4())
+        user_limit, project_limit = acl.get_limited_to(pecan.request.headers)
+
+        def _set_ownership(aspect, owner_limitation, header):
+            attr = '%s_id' % aspect
+            requested_owner = getattr(data, attr)
+            explicit_owner = requested_owner != wtypes.Unset
+            caller = pecan.request.headers.get(header)
+            if (owner_limitation and explicit_owner
+                    and requested_owner != caller):
+                raise ProjectNotAuthorized(requested_owner, aspect)
+
+            actual_owner = (owner_limitation or
+                            requested_owner if explicit_owner else caller)
+            setattr(data, attr, actual_owner)
+
+        _set_ownership('user', user_limit, 'X-User-Id')
+        _set_ownership('project', project_limit, 'X-Project-Id')
+
+        data.timestamp = now
+        data.state_timestamp = now
+
+        change = data.as_dict(storage.models.Contact)
+
+        # make sure alarms are unique by name per project.
+        contacts = list(conn.get_contacts(contact_name=data.contact_name,
+                                      project_id=data.project_id))
+        if contacts:
+            raise ClientSideError(
+                _("Contact with name='%s' exists") % data.contact_name,
+                status_code=409)
+        try:
+            contact_in = storage.models.Contact(**change)
+        except Exception:
+            LOG.exception(_("Error while posting contact: %s") % change)
+            raise ClientSideError(_("Contact incorrect"))
+
+        contact = conn.create_contact(contact_in)
+        return Contact.from_db_model(contact)
+
+    @wsme_pecan.wsexpose([Contact], [Query])
+    def get_all(self, q=[]):
+        kwargs = _query_to_kwargs(q,
+                                  pecan.request.storage_conn.get_contacts,
+                                  allow_timestamps=False)
+        return [Contact.from_db_model(m)
+                for m in pecan.request.storage_conn.get_contacts(**kwargs)]
+
+
 class V2Controller(object):
     """Version 2 API controller root."""
 
@@ -2488,3 +2687,4 @@ class V2Controller(object):
     events = EventsController()
     query = QueryController()
     capabilities = CapabilitiesController()
+    contacts = ContactsController()

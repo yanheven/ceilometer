@@ -126,12 +126,10 @@ class AgentManager(os_service.Service):
                 self.pollster_manager.extensions):
             if pipeline.support_meter(pollster.name):
                 polling_task = polling_tasks.get(pipeline.get_interval())
-                #firt time
                 if not polling_task:
                     polling_task = self.create_polling_task()
                     polling_tasks[pipeline.get_interval()] = polling_task
                 polling_task.add(pollster, [pipeline])
-                #pooling_task={'600':task++}
 
         return polling_tasks
 

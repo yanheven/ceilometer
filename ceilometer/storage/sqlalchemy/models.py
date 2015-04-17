@@ -458,3 +458,23 @@ class Trait(Base):
                                                      self.t_int,
                                                      self.t_datetime,
                                                      self.event)
+
+
+class Contact(Base):
+    """Define Contact data."""
+    __tablename__ = 'Contact'
+    __table_args__ = (
+        Index('ix_contact_user_id', 'user_id'),
+        Index('ix_contact_project_id', 'project_id'),
+    )
+    contact_id = Column(String(255), primary_key=True)
+    contact_name = Column(String(64))
+    contact_email = Column(String(64))
+    contact_phone = Column(String(64))
+    timestamp = Column(PreciseTimestamp, default=timeutils.utcnow)
+
+    user_id = Column(String(255))
+    project_id = Column(String(255))
+
+    state = Column(String(32))
+    state_timestamp = Column(PreciseTimestamp, default=timeutils.utcnow)

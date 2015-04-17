@@ -21,6 +21,7 @@ import mock
 import requests
 
 from ceilometer.alarm import service
+from ceilometer.alarm.notifier import smtp
 from ceilometer.openstack.common import context
 from ceilometer.openstack.common.fixture import config
 from ceilometer.openstack.common import test
@@ -207,3 +208,17 @@ class TestAlarmNotifier(test.BaseTestCase):
                     'condition': {'threshold': 42},
                 })
             self.assertTrue(LOG.error.called)
+
+    def test_notify_alarm_smtp_action(self):
+        self.service.notify_alarm(context.get_admin_context(),
+                                  {
+                                      'actions': ['mailto://frankie304278@163.com/warn_user?user_name=gxf'],
+                                      'alarm_id': 'foobar',
+                                      'condition': {'threshold': 42},
+                                  })
+
+    def test_notify_alarm_smtp(self):
+        subject = 'test_alarm_smtp'
+        message = 'Success!'
+        recipient_list = 'frankie304278@163.com'
+        smtp.send_mail(subject, message, recipient_list)

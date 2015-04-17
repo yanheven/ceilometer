@@ -55,15 +55,15 @@ class TestBase(test_base.BaseTestCase):
         self.useFixture(oslo_mock.Patch('ceilometer.storage.get_connection',
                                         return_value=self.conn))
 
-        self.CONF([], project='ceilometer')
+        # self.CONF([], project='ceilometer')
 
         # Set a default location for the pipeline config file so the
         # tests work even if ceilometer is not installed globally on
         # the system.
-        self.CONF.set_override(
-            'pipeline_cfg_file',
-            self.path_get('etc/ceilometer/pipeline.yaml')
-        )
+        # self.CONF.set_override(
+        #     'pipeline_cfg_file',
+        #     self.path_get('etc/ceilometer/pipeline.yaml')
+        # )
 
     def tearDown(self):
         self.conn.clear()
