@@ -744,7 +744,7 @@ class Connection(pymongo_base.Connection):
         :param resource: resource filter.
         """
         if resource is not None:
-            query['resource_id'] = resource
+            query['resource_id'] = {'$regex':resource}
 
         # Add resource_ prefix so it matches the field in the db
         query.update(dict(('resource_' + k, v)
@@ -800,7 +800,7 @@ class Connection(pymongo_base.Connection):
         :param resource: resource filter.
         """
         if resource is not None:
-            query['_id'] = resource
+            query['_id'] = {'$regx':resource}
 
         query.update(dict((k, v)
                           for (k, v) in metaquery.iteritems()))
