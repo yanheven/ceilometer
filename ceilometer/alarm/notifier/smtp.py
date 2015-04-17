@@ -1,5 +1,4 @@
 # -*- encoding: utf-8 -*-
-# Author: Frankie Gu <guxf@chinanetcenter.com>
 
 import smtplib
 import eventlet
